@@ -5,24 +5,24 @@ import (
 	"encoding/binary"
 )
 
-// Message 是可变长度的消息结构体，增加了长度字段
+// Message is a variable-length message structure with an added length field
 type Message struct {
-	Length int32  // 消息长度
-	Data   []byte // 实际消息数据
+	Length int32  // Message length
+	Data   []byte // Actual message data
 }
 
-// Encode 将消息编码为字节数组
+// Encode encodes the message into a byte array
 func (msg *Message) Encode() ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	msg.Length = int32(len(msg.Data))
 
-	// 先写入消息长度
+	// First write the message length
 	if err := binary.Write(buf, binary.LittleEndian, msg.Length); err != nil {
 		return nil, err
 	}
 
-	// 写入消息数据
+	// Write the message data
 	if _, err := buf.Write(msg.Data); err != nil {
 		return nil, err
 	}
@@ -30,17 +30,17 @@ func (msg *Message) Encode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Decode 从字节数组解码消息
+// Decode decodes the message from a byte array
 func Decode(data []byte) (*Message, error) {
 	buf := bytes.NewReader(data)
 
-	// 读取消息长度
+	// Read the message length
 	var length int32
 	if err := binary.Read(buf, binary.LittleEndian, &length); err != nil {
 		return nil, err
 	}
 
-	// 读取消息数据
+	// Read the message data
 	msgData := make([]byte, length)
 	if _, err := buf.Read(msgData); err != nil {
 		return nil, err

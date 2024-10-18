@@ -20,7 +20,7 @@ func TestBasicPushAndPop(t *testing.T) {
 	msg1 := &Message{Data: []byte("Hello")}
 	msg2 := &Message{Data: []byte("World")}
 
-	// 写入消息
+	// Write messages
 	err = queue.Push(msg1)
 	if err != nil {
 		t.Fatalf("failed to push message: %v", err)
@@ -31,7 +31,7 @@ func TestBasicPushAndPop(t *testing.T) {
 		t.Fatalf("failed to push message: %v", err)
 	}
 
-	// 读取消息
+	// Read messages
 	poppedMsg1, err := queue.Pop()
 	if err != nil {
 		t.Fatalf("failed to pop message: %v", err)
@@ -58,7 +58,7 @@ func TestMessageOrder(t *testing.T) {
 
 	messages := []string{"Msg1", "Msg2", "Msg3"}
 
-	// 写入多条消息
+	// Write multiple messages
 	for _, msg := range messages {
 		err := queue.Push(&Message{Data: []byte(msg)})
 		if err != nil {
@@ -66,7 +66,7 @@ func TestMessageOrder(t *testing.T) {
 		}
 	}
 
-	// 读取并验证顺序
+	// Read and verify order
 	for _, expected := range messages {
 		msg, err := queue.Pop()
 		if err != nil {
@@ -79,7 +79,7 @@ func TestMessageOrder(t *testing.T) {
 }
 
 func TestFrequencyLimit(t *testing.T) {
-	queue, err := NewMessageQueue("test_queue_freq.dat", 1024*1024, 2) // 每秒最多消费2条消息
+	queue, err := NewMessageQueue("test_queue_freq.dat", 1024*1024, 2) // Consume at most 2 messages per second
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestFrequencyLimit(t *testing.T) {
 
 	start := time.Now()
 
-	// 消费5条消息
+	// Consume 5 messages
 	for i := 0; i < 5; i++ {
 		_, err := queue.Pop()
 		if err != nil {
@@ -104,14 +104,14 @@ func TestFrequencyLimit(t *testing.T) {
 
 	elapsed := time.Since(start)
 
-	// 预期消费5条消息需要大约2.5秒 (因为频率是每秒2条)
+	// Expect to consume 5 messages in about 2.5 seconds (since the rate is 2 messages per second)
 	if elapsed < 2*time.Second || elapsed > 3*time.Second {
 		t.Fatalf("expected consumption time around 2.5 seconds, got %v", elapsed)
 	}
 }
 
 func TestNoFrequencyLimit(t *testing.T) {
-	queue, err := NewMessageQueue("test_queue_no_freq.dat", 1024*1024, 0) // 没有频率限制
+	queue, err := NewMessageQueue("test_queue_no_freq.dat", 1024*1024, 0) // No frequency limit
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestNoFrequencyLimit(t *testing.T) {
 
 	start := time.Now()
 
-	// 消费10条消息
+	// Consume 10 messages
 	for i := 0; i < 10; i++ {
 		_, err := queue.Pop()
 		if err != nil {
@@ -136,7 +136,7 @@ func TestNoFrequencyLimit(t *testing.T) {
 
 	elapsed := time.Since(start)
 
-	// 因为没有频率限制，预期时间非常短
+	// Since there is no frequency limit, the expected time is very short
 	if elapsed > 100*time.Millisecond {
 		t.Fatalf("expected fast consumption, but got %v", elapsed)
 	}
@@ -153,9 +153,9 @@ func TestMultiProducerConsumer(t *testing.T) {
 	produced := 0
 	consumed := 0
 	var mu sync.Mutex
-	errCh := make(chan error, 10) // 错误传递的 channel
+	errCh := make(chan error, 10) // Channel for error transmission
 
-	// 多生产者
+	// Multiple producers
 	producer := func() {
 		for i := 0; i < totalMessages/2; i++ {
 			err := queue.Push(&Message{Data: []byte("Message")})
@@ -169,7 +169,7 @@ func TestMultiProducerConsumer(t *testing.T) {
 		}
 	}
 
-	// 多消费者
+	// Multiple consumers
 	consumer := func() {
 		for {
 			_, err := queue.Pop()
@@ -183,23 +183,23 @@ func TestMultiProducerConsumer(t *testing.T) {
 		}
 	}
 
-	// 启动2个生产者和2个消费者
+	// Start 2 producers and 2 consumers
 	go producer()
 	go producer()
 	go consumer()
 	go consumer()
 
-	// 等待一段时间，模拟生产和消费过程
+	// Wait for a while to simulate the production and consumption process
 	time.Sleep(2 * time.Second)
 
-	// 检查是否有错误
+	// Check for errors
 	select {
 	case err := <-errCh:
 		if err != nil {
 			t.Fatalf("error occurred during test: %v", err)
 		}
 	default:
-		// 如果没有错误，继续检查生产和消费数量
+		// If no errors, continue to check the production and consumption counts
 	}
 
 	if produced != totalMessages {

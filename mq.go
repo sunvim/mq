@@ -9,45 +9,45 @@ import (
 )
 
 const (
-	MetadataSize = 128 // 文件头预留 128 字节存储元数据
+	MetadataSize = 128 // Reserve 128 bytes at the beginning of the file for storing metadata
 )
 
-// QueueMetadata 定义消息队列元数据结构
+// QueueMetadata defines the metadata structure for the message queue
 type QueueMetadata struct {
-	WriteOffset int64 // 写入偏移量
-	ReadOffset  int64 // 读取偏移量
+	WriteOffset int64 // Write offset
+	ReadOffset  int64 // Read offset
 }
 
-// MessageQueue 是消息队列的主要结构
+// MessageQueue is the main structure of the message queue
 type MessageQueue struct {
-	file     *os.File      // 文件映射到内存
-	mmap     []byte        // 映射的内存
-	size     int64         // 映射文件的大小
-	metadata QueueMetadata // 消息队列元数据
-	mutex    sync.Mutex    // 保护多生产者写入
-	cond     *sync.Cond    // 生产者和消费者的同步
-	ticker   *time.Ticker  // 消费频率控制
+	file     *os.File      // File mapped to memory
+	mmap     []byte        // Mapped memory
+	size     int64         // Size of the mapped file
+	metadata QueueMetadata // Message queue metadata
+	mutex    sync.Mutex    // Protect multi-producer writes
+	cond     *sync.Cond    // Synchronization between producers and consumers
+	ticker   *time.Ticker  // Control consumption frequency
 }
 
-// NewMessageQueue 创建一个新的消息队列并将其文件映射到内存中
+// NewMessageQueue creates a new message queue and maps its file to memory
 func NewMessageQueue(filePath string, size int64, ratePerSecond int) (*MessageQueue, error) {
 	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
 
-	// 预先分配文件大小
+	// Pre-allocate file size
 	if err := file.Truncate(size); err != nil {
 		return nil, err
 	}
 
-	// 使用 mmap 将文件映射到内存
+	// Use mmap to map the file to memory
 	mmap, err := syscall.Mmap(int(file.Fd()), 0, int(size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, err
 	}
 
-	// 初始化 ticker 以控制消费频率
+	// Initialize ticker to control consumption frequency
 	var ticker *time.Ticker
 	if ratePerSecond > 0 {
 		ticker = time.NewTicker(time.Second / time.Duration(ratePerSecond))
@@ -61,7 +61,7 @@ func NewMessageQueue(filePath string, size int64, ratePerSecond int) (*MessageQu
 	}
 	mq.cond = sync.NewCond(&mq.mutex)
 
-	// 加载元数据
+	// Load metadata
 	mq.loadMetadata()
 	if mq.metadata.WriteOffset < MetadataSize {
 		mq.metadata.WriteOffset = MetadataSize
@@ -73,7 +73,7 @@ func NewMessageQueue(filePath string, size int64, ratePerSecond int) (*MessageQu
 	return mq, nil
 }
 
-// Close 关闭消息队列并清理资源
+// Close closes the message queue and cleans up resources
 func (mq *MessageQueue) Close() error {
 	err := mq.saveMetadata()
 	if err != nil {
@@ -86,50 +86,50 @@ func (mq *MessageQueue) Close() error {
 	return mq.file.Close()
 }
 
-// Push 向队列中写入消息
+// Push writes a message to the queue
 func (mq *MessageQueue) Push(msg *Message) error {
 	mq.mutex.Lock()
 	defer mq.mutex.Unlock()
 
 	dataLen := len(msg.Data)
 	if mq.metadata.WriteOffset+int64(dataLen+4) > mq.size {
-		return os.ErrInvalid // 队列已满
+		return os.ErrInvalid // Queue is full
 	}
 
-	// 写入消息长度
+	// Write message length
 	binary.LittleEndian.PutUint32(mq.mmap[mq.metadata.WriteOffset:], uint32(dataLen))
 	mq.metadata.WriteOffset += 4
 
-	// 写入消息数据
+	// Write message data
 	copy(mq.mmap[mq.metadata.WriteOffset:], msg.Data)
 	mq.metadata.WriteOffset += int64(dataLen)
 
-	// 通知消费者有新消息
+	// Notify consumers of new message
 	mq.cond.Signal()
 
 	return nil
 }
 
-// Pop 从队列中读取可变长度消息，并按照设定的频率消费
+// Pop reads a variable-length message from the queue and consumes it at the set frequency
 func (mq *MessageQueue) Pop() (*Message, error) {
 	for {
-		if mq.ticker == nil { // 没有频率限制时，立即消费
+		if mq.ticker == nil { // Consume immediately if there is no frequency limit
 			return mq.consumeMessage()
 		}
 
 		select {
-		case <-mq.ticker.C: // 按照设定的频率吐出消息
+		case <-mq.ticker.C: // Consume messages at the set frequency
 			return mq.consumeMessage()
 		}
 	}
 }
 
-// Flush 刷盘，将内存中的消息持久化到磁盘
+// Flush flushes the queue, persisting messages in memory to disk
 func (mq *MessageQueue) Flush() error {
 	mq.mutex.Lock()
 	defer mq.mutex.Unlock()
 
-	// 更新元数据并保存
+	// Update metadata and save
 	err := mq.saveMetadata()
 	if err != nil {
 		return err

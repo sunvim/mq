@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-// saveMetadata 将元数据写入文件头部
+// saveMetadata writes metadata to the file header
 func (mq *MessageQueue) saveMetadata() error {
 	mq.mutex.Lock()
 	defer mq.mutex.Unlock()
@@ -14,15 +14,15 @@ func (mq *MessageQueue) saveMetadata() error {
 	binary.LittleEndian.PutUint64(buf[0:], uint64(mq.metadata.WriteOffset))
 	binary.LittleEndian.PutUint64(buf[8:], uint64(mq.metadata.ReadOffset))
 
-	_, err := mq.file.WriteAt(buf, 0) // 写入文件头部
+	_, err := mq.file.WriteAt(buf, 0) // write to the file header
 	if err != nil {
 		return err
 	}
 
-	return mq.file.Sync() // 确保数据写入磁盘
+	return mq.file.Sync() // ensure data is written to disk
 }
 
-// loadMetadata 从文件头部加载元数据
+// loadMetadata loads metadata from the file header
 func (mq *MessageQueue) loadMetadata() error {
 	buf := make([]byte, MetadataSize)
 	_, err := mq.file.ReadAt(buf, 0)
@@ -36,29 +36,29 @@ func (mq *MessageQueue) loadMetadata() error {
 	return nil
 }
 
-// 显示文件头部的元数据
+// showMetadata displays the metadata in the file header
 func (mq *MessageQueue) showMetadata() QueueMetadata {
 	return mq.metadata
 }
 
-// consumeMessage 是一个帮助函数，用于实际消费消息
+// consumeMessage is a helper function to actually consume a message
 func (mq *MessageQueue) consumeMessage() (*Message, error) {
 	mq.mutex.Lock()
 	defer mq.mutex.Unlock()
 
 	for mq.metadata.ReadOffset >= mq.metadata.WriteOffset {
-		mq.cond.Wait() // 等待有新消息
+		mq.cond.Wait() // wait for new messages
 	}
 
-	// 读取消息长度
+	// read message length
 	msgLen := int(binary.LittleEndian.Uint32(mq.mmap[mq.metadata.ReadOffset:]))
 	mq.metadata.ReadOffset += 4
 
 	if mq.metadata.ReadOffset+int64(msgLen) > mq.size {
-		return nil, os.ErrInvalid // 超出范围
+		return nil, os.ErrInvalid // out of range
 	}
 
-	// 读取消息内容
+	// read message content
 	msgData := mq.mmap[mq.metadata.ReadOffset : mq.metadata.ReadOffset+int64(msgLen)]
 	mq.metadata.ReadOffset += int64(msgLen)
 
