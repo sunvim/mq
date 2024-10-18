@@ -7,7 +7,7 @@ import (
 )
 
 func TestBasicPushAndPop(t *testing.T) {
-	queue, err := NewMessageQueue("test_queue_basic.dat", 1024*1024, 0, 10)
+	queue, err := NewMessageQueue("test_queue_basic.dat", 1024*1024, 0)
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestBasicPushAndPop(t *testing.T) {
 }
 
 func TestMessageOrder(t *testing.T) {
-	queue, err := NewMessageQueue("test_queue_order.dat", 1024*1024, 0, 10)
+	queue, err := NewMessageQueue("test_queue_order.dat", 1024*1024, 0)
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestMessageOrder(t *testing.T) {
 }
 
 func TestFrequencyLimit(t *testing.T) {
-	queue, err := NewMessageQueue("test_queue_freq.dat", 1024*1024, 2, 10) // 每秒最多消费2条消息
+	queue, err := NewMessageQueue("test_queue_freq.dat", 1024*1024, 2) // 每秒最多消费2条消息
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestFrequencyLimit(t *testing.T) {
 }
 
 func TestNoFrequencyLimit(t *testing.T) {
-	queue, err := NewMessageQueue("test_queue_no_freq.dat", 1024*1024, 0, 10) // 没有频率限制
+	queue, err := NewMessageQueue("test_queue_no_freq.dat", 1024*1024, 0) // 没有频率限制
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestNoFrequencyLimit(t *testing.T) {
 }
 
 func TestMultiProducerConsumer(t *testing.T) {
-	queue, err := NewMessageQueue("test_queue_multi.dat", 1024*1024, 0, 10)
+	queue, err := NewMessageQueue("test_queue_multi.dat", 1024*1024, 0)
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}

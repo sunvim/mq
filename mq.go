@@ -30,7 +30,7 @@ type MessageQueue struct {
 }
 
 // NewMessageQueue 创建一个新的消息队列并将其文件映射到内存中
-func NewMessageQueue(filePath string, size int64, ratePerSecond, maxRetainMsgs int) (*MessageQueue, error) {
+func NewMessageQueue(filePath string, size int64, ratePerSecond int) (*MessageQueue, error) {
 	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
