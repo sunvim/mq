@@ -125,9 +125,10 @@ go test ./...
 
 We have included various test cases to validate the core functionalities such as:
 
-Basic message push and pop operations.
-Multi-producer and multi-consumer behavior.
-Handling of rate-limited consumption.
-Recovery from service restarts.
+- Basic message push and pop operations.
+- Multi-producer and multi-consumer behavior.
+- Handling of rate-limited consumption.
+- Recovery from service restarts.
+
 License
 This project is licensed under the MIT License. See the LICENSE file for details.
