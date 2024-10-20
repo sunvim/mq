@@ -130,17 +130,3 @@ Retaining recently consumed messages.
 Recovery from service restarts.
 License
 This project is licensed under the MIT License. See the LICENSE file for details.
-
-### Summary of the README
-
-- **Introduction**: Describes the core functionality of the message queue library.
-- **Features**: Lists the key features of the library.
-- **Installation**: Instructions on how to install the library.
-- **Usage**: Shows how to initialize, produce, and consume messages.
-- **Configuration**: Explains how to configure metadata, retention, and rate control.
-- **Example**: A complete code example to demonstrate how to use the library.
-- **Contributing**: Guidelines for contributing to the project.
-- **Testing**: Instructions for running the test suite.
-- **License**: Licensing information.
-
-Feel free to modify this README to fit your specific project and any additional information you'd like to include.
