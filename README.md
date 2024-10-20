@@ -1,3 +1,4 @@
+[中文](README_CN.md)
 # mq
 
 embed message queue for golang A high-performance, multi-producer, multi-consumer message queue library written in Go, based on memory-mapped files (`mmap`). This library supports maintaining message order, ensures successful message delivery, retains high performance, and avoids message loss. It also supports flexible features such as retaining recently consumed messages, periodic deletion of older consumed messages, and controlled message consumption rate.
