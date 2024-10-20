@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -209,4 +210,50 @@ func TestMultiProducerConsumer(t *testing.T) {
 	if consumed != totalMessages {
 		t.Fatalf("expected %d messages consumed, but got %d", totalMessages, consumed)
 	}
+}
+
+func TestDeleteConsumedMessages(t *testing.T) {
+	// Initialize the message queue
+	queue, err := NewMessageQueue("test_queue_delete_consumed.dat", 1024*1024, 0)
+	if err != nil {
+		t.Fatalf("failed to initialize message queue: %v", err)
+	}
+	defer queue.Close()
+
+	// Produce 50 messages
+	for i := 0; i < 50; i++ {
+		msg := &Message{Data: []byte(fmt.Sprintf("Message %d", i))}
+		if err := queue.Push(msg); err != nil {
+			t.Fatalf("failed to push message: %v", err)
+		}
+	}
+
+	// Consume the first 30 messages
+	for i := 0; i < 30; i++ {
+		msg, err := queue.Pop()
+		if err != nil {
+			t.Fatalf("failed to pop message: %v", err)
+		}
+		if string(msg.Data) != fmt.Sprintf("Message %d", i) {
+			t.Fatalf("message order incorrect, expected: %d, got: %s", i, msg.Data)
+		}
+	}
+
+	// Call DeleteConsumedMessages to delete the consumed 30 messages
+	err = queue.DeleteConsumedMessages()
+	if err != nil {
+		t.Fatalf("failed to delete consumed messages: %v", err)
+	}
+
+	// Verify that the remaining messages are correctly retained
+	for i := 30; i < 50; i++ {
+		msg, err := queue.Pop()
+		if err != nil {
+			t.Fatalf("failed to pop message: %v", err)
+		}
+		if string(msg.Data) != fmt.Sprintf("Message %d", i) {
+			t.Fatalf("message order incorrect, expected: %d, got: %s", i, msg.Data)
+		}
+	}
+
 }

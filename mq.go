@@ -129,11 +129,29 @@ func (mq *MessageQueue) Flush() error {
 	mq.mutex.Lock()
 	defer mq.mutex.Unlock()
 
-	// Update metadata and save
-	err := mq.saveMetadata()
-	if err != nil {
-		return err
+	return mq.file.Sync()
+}
+
+// DeleteConsumedMessages deletes consumed messages and updates the queue offsets
+func (mq *MessageQueue) DeleteConsumedMessages() error {
+	mq.mutex.Lock()
+	defer mq.mutex.Unlock()
+
+	// If there are no consumed messages, return directly
+	if mq.metadata.ReadOffset == MetadataSize {
+		return nil // No consumed messages
 	}
 
-	return mq.file.Sync()
+	// Calculate the size of unconsumed messages
+	remainingDataSize := mq.metadata.WriteOffset - mq.metadata.ReadOffset
+	if remainingDataSize > 0 {
+		// Move unconsumed messages to the beginning of the queue
+		copy(mq.mmap[MetadataSize:], mq.mmap[mq.metadata.ReadOffset:mq.metadata.WriteOffset])
+	}
+
+	// Update offsets
+	mq.metadata.WriteOffset = MetadataSize + remainingDataSize
+	mq.metadata.ReadOffset = MetadataSize
+
+	return nil
 }
