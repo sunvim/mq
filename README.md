@@ -1,5 +1,7 @@
-[中文](README_CN.md)
+
 # mq
+
+[中文](README_CN.md)
 
 embed message queue for golang A high-performance, multi-producer, multi-consumer message queue library written in Go, based on memory-mapped files (`mmap`). This library supports maintaining message order, ensures successful message delivery, retains high performance, and avoids message loss. It also supports flexible features such as retaining recently consumed messages, periodic deletion of older consumed messages, and controlled message consumption rate.
 
@@ -9,7 +11,6 @@ embed message queue for golang A high-performance, multi-producer, multi-consume
 - **Multi-Producer, Multi-Consumer**: Supports multiple producers and consumers simultaneously, ensuring thread safety and data integrity.
 - **Message Order**: Guarantees that messages are consumed in the order they are produced.
 - **No Message Loss**: Messages are persistently stored, ensuring no data loss even in case of service restarts.
-- **Retain Recently Consumed Messages**: Configurable retention of the last N consumed messages, with periodic deletion of older messages.
 - **Control Message Consumption Rate**: Supports limiting message consumption speed (e.g., 30 messages per second).
 - **Service Restart Handling**: Automatically resumes from the last unconsumed message after service restarts. Also supports the option to re-consume messages from the beginning.
 - **New File Detection**: The library detects when the file is newly created and initializes offsets and metadata accordingly.
@@ -127,7 +128,6 @@ We have included various test cases to validate the core functionalities such as
 Basic message push and pop operations.
 Multi-producer and multi-consumer behavior.
 Handling of rate-limited consumption.
-Retaining recently consumed messages.
 Recovery from service restarts.
 License
 This project is licensed under the MIT License. See the LICENSE file for details.
