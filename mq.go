@@ -20,13 +20,15 @@ type QueueMetadata struct {
 
 // MessageQueue is the main structure of the message queue
 type MessageQueue struct {
-	file     *os.File      // File mapped to memory
-	mmap     []byte        // Mapped memory
-	size     int64         // Size of the mapped file
-	metadata QueueMetadata // Message queue metadata
-	mutex    sync.Mutex    // Protect multi-producer writes
-	cond     *sync.Cond    // Synchronization between producers and consumers
-	ticker   *time.Ticker  // Control consumption frequency
+	file        *os.File      // File mapped to memory
+	mmap        []byte        // Mapped memory
+	size        int64         // Size of the mapped file
+	metadata    QueueMetadata // Message queue metadata
+	writeMutex  sync.Mutex    // Protect multi-producer writes
+	readMutex   sync.Mutex    // Protect multi-consumer reads
+	cond        *sync.Cond    // Synchronization between producers and consumers
+	ticker      *time.Ticker  // Control consumption frequency
+	metadataMux sync.RWMutex  // Protects metadata access
 }
 
 // NewMessageQueue creates a new message queue and maps its file to memory
@@ -54,15 +56,18 @@ func NewMessageQueue(filePath string, size int64, ratePerSecond int) (*MessageQu
 	}
 
 	mq := &MessageQueue{
-		file:   file,
-		mmap:   mmap,
-		size:   size,
-		ticker: ticker,
+		file:      file,
+		mmap:      mmap,
+		size:      size,
+		ticker:    ticker,
 	}
-	mq.cond = sync.NewCond(&mq.mutex)
+	mq.cond = sync.NewCond(&mq.writeMutex)
 
 	// Load metadata
-	mq.loadMetadata()
+	if err := mq.loadMetadata(); err != nil {
+		return nil, err
+	}
+
 	if mq.metadata.WriteOffset < MetadataSize {
 		mq.metadata.WriteOffset = MetadataSize
 	}
@@ -88,21 +93,27 @@ func (mq *MessageQueue) Close() error {
 
 // Push writes a message to the queue
 func (mq *MessageQueue) Push(msg *Message) error {
-	mq.mutex.Lock()
-	defer mq.mutex.Unlock()
+	mq.writeMutex.Lock()
+	defer mq.writeMutex.Unlock()
+
+	// Get current write offset
+	currentWriteOffset := mq.getWriteOffset()
 
 	dataLen := len(msg.Data)
-	if mq.metadata.WriteOffset+int64(dataLen+4) > mq.size {
+	if currentWriteOffset+int64(dataLen+4) > mq.size {
 		return os.ErrInvalid // Queue is full
 	}
 
 	// Write message length
-	binary.LittleEndian.PutUint32(mq.mmap[mq.metadata.WriteOffset:], uint32(dataLen))
-	mq.metadata.WriteOffset += 4
+	binary.LittleEndian.PutUint32(mq.mmap[currentWriteOffset:], uint32(dataLen))
+	currentWriteOffset += 4
 
 	// Write message data
-	copy(mq.mmap[mq.metadata.WriteOffset:], msg.Data)
-	mq.metadata.WriteOffset += int64(dataLen)
+	copy(mq.mmap[currentWriteOffset:], msg.Data)
+	currentWriteOffset += int64(dataLen)
+
+	// Update write offset
+	mq.setWriteOffset(currentWriteOffset)
 
 	// Notify consumers of new message
 	mq.cond.Signal()
@@ -124,34 +135,123 @@ func (mq *MessageQueue) Pop() (*Message, error) {
 	}
 }
 
+// PopAll reads all unconsumed messages from the queue at once
+// This returns all available messages without waiting for new ones
+func (mq *MessageQueue) PopAll() ([]*Message, error) {
+	mq.readMutex.Lock()
+	defer mq.readMutex.Unlock()
+
+	// Get current read and write offsets
+	readOffset := mq.getReadOffset()
+	writeOffset := mq.getWriteOffset()
+
+	// If there are no messages to read
+	if readOffset >= writeOffset {
+		return []*Message{}, nil
+	}
+
+	var messages []*Message
+	currentOffset := readOffset
+
+	// Read all available messages
+	for currentOffset < writeOffset {
+		// Check if we have enough space to read message length
+		if currentOffset+4 > writeOffset {
+			break
+		}
+
+		// Read message length
+		msgLen := int(binary.LittleEndian.Uint32(mq.mmap[currentOffset:]))
+		currentOffset += 4
+
+		// Check if the complete message is available
+		if currentOffset+int64(msgLen) > writeOffset {
+			break
+		}
+
+		// Read message content
+		msgData := make([]byte, msgLen)
+		copy(msgData, mq.mmap[currentOffset:currentOffset+int64(msgLen)])
+		currentOffset += int64(msgLen)
+
+		messages = append(messages, &Message{Data: msgData})
+	}
+
+	// Update read offset
+	mq.setReadOffset(currentOffset)
+
+	return messages, nil
+}
+
+// WaitForMessages waits until there are new messages available
+func (mq *MessageQueue) WaitForMessages() {
+	mq.writeMutex.Lock()
+	for mq.getReadOffset() >= mq.getWriteOffset() {
+		mq.cond.Wait() // wait for new messages
+	}
+	mq.writeMutex.Unlock()
+}
+
 // Flush flushes the queue, persisting messages in memory to disk
 func (mq *MessageQueue) Flush() error {
-	mq.mutex.Lock()
-	defer mq.mutex.Unlock()
+	mq.writeMutex.Lock()
+	defer mq.writeMutex.Unlock()
 
 	return mq.file.Sync()
 }
 
 // DeleteConsumedMessages deletes consumed messages and updates the queue offsets
 func (mq *MessageQueue) DeleteConsumedMessages() error {
-	mq.mutex.Lock()
-	defer mq.mutex.Unlock()
+	// Lock both read and write to perform this operation
+	mq.writeMutex.Lock()
+	mq.readMutex.Lock()
+	defer mq.readMutex.Unlock()
+	defer mq.writeMutex.Unlock()
+
+	readOffset := mq.getReadOffset()
+	writeOffset := mq.getWriteOffset()
 
 	// If there are no consumed messages, return directly
-	if mq.metadata.ReadOffset == MetadataSize {
+	if readOffset == MetadataSize {
 		return nil // No consumed messages
 	}
 
 	// Calculate the size of unconsumed messages
-	remainingDataSize := mq.metadata.WriteOffset - mq.metadata.ReadOffset
+	remainingDataSize := writeOffset - readOffset
 	if remainingDataSize > 0 {
 		// Move unconsumed messages to the beginning of the queue
-		copy(mq.mmap[MetadataSize:], mq.mmap[mq.metadata.ReadOffset:mq.metadata.WriteOffset])
+		copy(mq.mmap[MetadataSize:], mq.mmap[readOffset:writeOffset])
 	}
 
 	// Update offsets
-	mq.metadata.WriteOffset = MetadataSize + remainingDataSize
-	mq.metadata.ReadOffset = MetadataSize
+	mq.setWriteOffset(MetadataSize + remainingDataSize)
+	mq.setReadOffset(MetadataSize)
 
 	return nil
+}
+
+// Helper methods for thread-safe metadata access
+
+func (mq *MessageQueue) getReadOffset() int64 {
+	mq.metadataMux.RLock()
+	defer mq.metadataMux.RUnlock()
+	return mq.metadata.ReadOffset
+}
+
+func (mq *MessageQueue) getWriteOffset() int64 {
+	mq.metadataMux.RLock()
+	defer mq.metadataMux.RUnlock()
+	return mq.metadata.WriteOffset
+}
+
+func (mq *MessageQueue) setReadOffset(offset int64) {
+	mq.metadataMux.Lock()
+	defer mq.metadataMux.Unlock()
+	mq.metadata.ReadOffset = offset
+}
+
+func (mq *MessageQueue) setWriteOffset(offset int64) {
+	mq.metadataMux.Lock()
+	defer mq.metadataMux.Unlock()
+	mq.metadata.WriteOffset = offset
 }

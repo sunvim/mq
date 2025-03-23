@@ -7,16 +7,116 @@ import (
 	"time"
 )
 
+func TestPopAll(t *testing.T) {
+	// Initialize the message queue
+	queue, err := NewMessageQueue("test_queue_popall.dat", 1024*1024, 0)
+	if err != nil {
+		t.Fatalf("failed to initialize message queue: %v", err)
+	}
+	defer queue.Close()
+
+	// Test with empty queue
+	msgs, err := queue.PopAll()
+	if err != nil {
+		t.Fatalf("failed to pop all messages: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 messages, got %d", len(msgs))
+	}
+
+	// Produce 50 messages
+	for i := range 50 {
+		buf := []byte("Message")
+		msg := &Message{Data: fmt.Appendf(buf, "%d", i)}
+		if err := queue.Push(msg); err != nil {
+			t.Fatalf("failed to push message: %v", err)
+		}
+	}
+
+	// Pop all messages at once
+	msgs, err = queue.PopAll()
+	if err != nil {
+		t.Fatalf("failed to pop all messages: %v", err)
+	}
+	if len(msgs) != 50 {
+		t.Fatalf("expected 50 messages, got %d", len(msgs))
+	}
+
+	// Verify message contents
+	for i, msg := range msgs {
+		if string(msg.Data) != fmt.Sprintf("Message%d", i) {
+			t.Fatalf("message order incorrect, expected: Message %d, got: %s", i, msg.Data)
+		}
+	}
+
+	// Verify that all messages were consumed
+	msgs, err = queue.PopAll()
+	if err != nil {
+		t.Fatalf("failed to pop all messages: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 messages after consuming all, got %d", len(msgs))
+	}
+}
+
+func TestConcurrentReadWrite(t *testing.T) {
+	// Initialize the message queue
+	queue, err := NewMessageQueue("test_queue_concurrent.dat", 1024*1024, 0)
+	if err != nil {
+		t.Fatalf("failed to initialize message queue: %v", err)
+	}
+	defer queue.Close()
+
+	// Number of messages to produce/consume
+	const messageCount = 1000
+	// Channel to signal completion
+	done := make(chan bool)
+
+	// Producer goroutine
+	go func() {
+		for i := range messageCount {
+			buf := []byte("Message")
+			msg := &Message{Data: fmt.Appendf(buf, "%d", i)}
+			if err := queue.Push(msg); err != nil {
+				t.Errorf("producer: failed to push message: %v", err)
+				return
+			}
+			// Small sleep to make concurrent issues more likely to show up
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	// Consumer goroutine - using PopAll
+	go func() {
+		consumed := 0
+		for consumed < messageCount {
+			msgs, err := queue.PopAll()
+			if err != nil {
+				t.Errorf("consumer: failed to pop messages: %v", err)
+				return
+			}
+			consumed += len(msgs)
+			// Small sleep to make concurrent issues more likely to show up
+			time.Sleep(2 * time.Millisecond)
+		}
+		done <- true
+	}()
+
+	// Wait for consumer to finish
+	select {
+	case <-done:
+		// Success case
+	case <-time.After(10 * time.Second):
+		t.Fatal("test timed out")
+	}
+}
+
 func TestBasicPushAndPop(t *testing.T) {
 	queue, err := NewMessageQueue("test_queue_basic.dat", 1024*1024, 0)
 	if err != nil {
 		t.Fatalf("failed to create message queue: %v", err)
 	}
 	defer queue.Close()
-
-	meta := queue.showMetadata()
-
-	t.Logf("meta: %+v", meta)
 
 	msg1 := &Message{Data: []byte("Hello")}
 	msg2 := &Message{Data: []byte("World")}
@@ -86,7 +186,7 @@ func TestFrequencyLimit(t *testing.T) {
 	}
 	defer queue.Close()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		err := queue.Push(&Message{Data: []byte("Message")})
 		if err != nil {
 			t.Fatalf("failed to push message: %v", err)
@@ -96,7 +196,7 @@ func TestFrequencyLimit(t *testing.T) {
 	start := time.Now()
 
 	// Consume 5 messages
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, err := queue.Pop()
 		if err != nil {
 			t.Fatalf("failed to pop message: %v", err)
@@ -118,7 +218,7 @@ func TestNoFrequencyLimit(t *testing.T) {
 	}
 	defer queue.Close()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		err := queue.Push(&Message{Data: []byte("Message")})
 		if err != nil {
 			t.Fatalf("failed to push message: %v", err)
@@ -128,7 +228,7 @@ func TestNoFrequencyLimit(t *testing.T) {
 	start := time.Now()
 
 	// Consume 10 messages
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_, err := queue.Pop()
 		if err != nil {
 			t.Fatalf("failed to pop message: %v", err)
@@ -158,7 +258,7 @@ func TestMultiProducerConsumer(t *testing.T) {
 
 	// Multiple producers
 	producer := func() {
-		for i := 0; i < totalMessages/2; i++ {
+		for range totalMessages / 2 {
 			err := queue.Push(&Message{Data: []byte("Message")})
 			if err != nil {
 				errCh <- err
@@ -221,20 +321,21 @@ func TestDeleteConsumedMessages(t *testing.T) {
 	defer queue.Close()
 
 	// Produce 50 messages
-	for i := 0; i < 50; i++ {
-		msg := &Message{Data: []byte(fmt.Sprintf("Message %d", i))}
+	for i := range 50 {
+		buf := []byte("Message")
+		msg := &Message{Data: fmt.Appendf(buf, "%d", i)}
 		if err := queue.Push(msg); err != nil {
 			t.Fatalf("failed to push message: %v", err)
 		}
 	}
 
 	// Consume the first 30 messages
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		msg, err := queue.Pop()
 		if err != nil {
 			t.Fatalf("failed to pop message: %v", err)
 		}
-		if string(msg.Data) != fmt.Sprintf("Message %d", i) {
+		if string(msg.Data) != fmt.Sprintf("Message%d", i) {
 			t.Fatalf("message order incorrect, expected: %d, got: %s", i, msg.Data)
 		}
 	}
@@ -251,7 +352,7 @@ func TestDeleteConsumedMessages(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to pop message: %v", err)
 		}
-		if string(msg.Data) != fmt.Sprintf("Message %d", i) {
+		if string(msg.Data) != fmt.Sprintf("Message%d", i) {
 			t.Fatalf("message order incorrect, expected: %d, got: %s", i, msg.Data)
 		}
 	}
